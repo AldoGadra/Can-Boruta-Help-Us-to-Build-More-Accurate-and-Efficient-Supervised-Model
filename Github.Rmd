@@ -1,0 +1,211 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(rpart)
+library(rpart.plot)
+library(readxl)
+library(rattle)
+library(RColorBrewer)
+library(caret)
+library(e1071)
+library(Boruta)
+library(psych)
+library(caTools)
+library(dplyr)
+```
+
+1. Data load 
+```{r}
+df_ht <- read.csv("C:/Users/Aldo Gadra/Documents/Data overview/Data project/heart/heart.csv")
+summary(df_ht)
+```
+2. Missing data handling 
+```{r}
+df_ht <-  df_ht[complete.cases(df_ht),]
+```
+
+```{r}
+head(df_ht)
+```
+
+3. Boruta model 
+```{r}
+f_ht <- Boruta(output~., data = df_ht)
+print(f_ht)
+```
+
+4. Plotting the impotance value of every feature
+```{r}
+plot(f_ht)
+plot(f_ht, cex.axis=0.5,cex.lab=0.8) 
+```
+
+Boruta checked 1 variabel that have tentative value, we need to re check that
+```{r}
+final.boruta <- TentativeRoughFix(f_ht)
+print(final.boruta)
+```
+Final plot
+```{r}
+plot(final.boruta, xlab = "", xaxt = "n")
+lz<-lapply(1:ncol(final.boruta$ImpHistory),function(i)
+final.boruta$ImpHistory[is.finite(final.boruta$ImpHistory[,i]),i])
+names(lz) <- colnames(final.boruta$ImpHistory)
+Labels <- sort(sapply(lz,median))
+axis(side = 1,las=2,labels = names(Labels),
+at = 1:ncol(final.boruta$ImpHistory), cex.axis = 0.7)
+```
+Feature selection through the highest medianImo in imprtant vairable
+```{r}
+getSelectedAttributes(final.boruta, withTentative = F)
+boruta.df <- attStats(final.boruta)
+class(boruta.df)
+boruta.df <- boruta.df[order(boruta.df$medianImp),]
+head(boruta.df, n = 5)
+print(boruta.df)
+```
+Seeing top 5 varibel with the hight medianIMP value
+```{r}
+boruta.df <- boruta.df[order(boruta.df$medianImp, decreasing = TRUE),]
+head(boruta.df, n = 13)
+```
+We are  gonna test BORUTA model through 4 model cases
+Model 1: caa+cp+thall+oldpeak
+Model 2: caa+cp+thall+oldpeak+thalachh
+Model 3: caa+cp+thall+oldpeak+thalachh+exng+sex+slp+age+trtbps
+Model 4: semua variabel
+
+Dengan keterangan: 
+model 1: 4 varibel dengan importance paling kuat 
+model 2: 5 varibel dengan importance paling kuat 
+model 3: semua varibel yang dinyatakan important dengan outcome
+model 4: semua variabel
+
+6. Correlation check
+```{r}
+pairs.panels(df_ht, 
+             method = "pearson", 
+             hist.col = "#00AFBB",
+             density = TRUE,  
+             ellipses = TRUE,
+             cex.cor = 20) 
+ 
+```
+
+```{r}
+res <- cor(df_ht)
+round(res, 2)
+```
+There is no reported highly correlated variable
+
+3. Testing model effectiveness htough different algorithm
+3.1 Naive Bayes
+3.1.1 Split data trainign dan test
+```{r}
+# split training and test data
+set.seed(123)
+sample <- sample.split(df_ht$output, SplitRatio = .80)
+train <- subset(df_ht, sample == TRUE)
+test <- subset(df_ht, sample == FALSE)
+```
+
+3.2 Loading model
+```{r}
+modelNB1 <- naiveBayes(output~caa+cp+thall+oldpeak,data=train)
+modelNB2 <- naiveBayes(output~caa+cp+thall+oldpeak+thalachh,data=train)
+modelNB3 <- naiveBayes(output~caa+cp+thall+oldpeak+thalachh+exng+sex+slp+age+trtbps,data=train)
+modelNB4 <- naiveBayes(output~.,data=train)
+```
+
+3.3 Model comparisson
+3.3.1 ModelNB1
+```{r}
+#modelNb1
+prediction1 <-  predict(modelNB1,test)
+result1 <- confusionMatrix(table(prediction1,test$output))
+result1
+```
+3.3.2 ModelNB2
+```{r}
+#modelNb2
+prediction2 <-  predict(modelNB2,test)
+result2 <- confusionMatrix(table(prediction2,test$output))
+result2
+```
+3.3.3 ModelNB3
+```{r}
+#modelNb1
+prediction3 <-  predict(modelNB3,test)
+result3 <- confusionMatrix(table(prediction3,test$output))
+result3
+```
+3.3.4 ModelNB4
+```{r}
+#modelNb2
+prediction4 <-  predict(modelNB4,test)
+result4 <- confusionMatrix(table(prediction4,test$output))
+result4
+```
+
+
+
+3.1 Decision tress 
+```{r}
+model_dt1 <-  rpart(output~caa+cp+thall+oldpeak, data = train, method='class')
+rpart.plot(model_dt1)
+```
+
+```{r}
+model_dt2 <-  rpart(output~caa+cp+thall+oldpeak+thalachh, data = train, method='class')
+rpart.plot(model_dt2)
+```
+
+```{r}
+model_dt3 <-  rpart(output~caa+cp+thall+oldpeak+thalachh+exng+sex+slp+age+trtbps, data = train, method='class')
+rpart.plot(model_dt3)
+```
+
+```{r}
+model_dt4 <-  rpart(output~., data = train, method='class')
+rpart.plot(model_dt4)
+```
+
+Model 1
+```{r}
+y_test_predict1 <-  predict(model_dt1,test,type = 'class')
+predict_unseen1 <-predict(model_dt1, test, type = 'class')
+table_mat <- table(test$output, predict_unseen1)
+accuracy_Test <- sum(diag(table_mat)) / sum(table_mat)
+accuracy_Test
+```
+Model 2
+```{r}
+y_test_predict2 <-  predict(model_dt2,test,type = 'class')
+predict_unseen2 <-predict(model_dt2, test, type = 'class')
+table_mat <- table(test$output, predict_unseen2)
+accuracy_Test <- sum(diag(table_mat)) / sum(table_mat)
+accuracy_Test
+```
+Model 3
+```{r}
+y_test_predict3 <-  predict(model_dt3,test,type = 'class')
+predict_unseen <-predict(model_dt3, test, type = 'class')
+table_mat <- table(test$output, predict_unseen)
+accuracy_Test <- sum(diag(table_mat)) / sum(table_mat)
+accuracy_Test
+```
+model 4
+```{r}
+y_test_predict4 <-  predict(model_dt4,test,type = 'class')
+predict_unseen <-predict(model_dt4, test, type = 'class')
+table_mat <- table(test$output, predict_unseen)
+accuracy_Test <- sum(diag(table_mat)) / sum(table_mat)
+accuracy_Test
+```
+
+
+
+
